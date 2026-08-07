@@ -5,7 +5,6 @@ import os
 import json
 import numpy as np
 from decimal import Decimal
-from RAGHelper import RAGHelper
 from psycopg2 import pool
 
 class SafeJSONEncoder(json.JSONEncoder):
@@ -46,16 +45,27 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
 
-# Set up a connection pool
-db_pool = pool.SimpleConnectionPool(
-    minconn=1,
-    maxconn=10,
-    dsn=os.getenv("postgres_uri")
-)
+# Under RAGMEUP_TESTING the suite supplies a mock raghelper / pool so importing
+# this module does not require Postgres or heavy model downloads.
+db_pool = None
+raghelper = None
 
-# Instantiate the RAG Helper class
-logger.info("Instantiating RAG helper.")
-raghelper = RAGHelper(logger, db_pool)
+def bootstrap():
+    """Create the DB pool and RAGHelper. Skipped when RAGMEUP_TESTING=1."""
+    global db_pool, raghelper
+    if os.getenv("RAGMEUP_TESTING") == "1":
+        logger.info("Skipping bootstrap (RAGMEUP_TESTING=1).")
+        return
+    from RAGHelper import RAGHelper
+    db_pool = pool.SimpleConnectionPool(
+        minconn=1,
+        maxconn=10,
+        dsn=os.getenv("postgres_uri")
+    )
+    logger.info("Instantiating RAG helper.")
+    raghelper = RAGHelper(logger, db_pool)
+
+bootstrap()
 
 @app.route("/create_title", methods=['POST'])
 def create_title():

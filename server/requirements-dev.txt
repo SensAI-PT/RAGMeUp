@@ -1,0 +1,4 @@
+# Install on top of requirements.txt for running the test suite:
+#   pip install -r requirements.txt -r requirements-dev.txt
+pytest>=8.0
+pytest-mock>=3.12

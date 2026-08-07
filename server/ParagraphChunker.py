@@ -9,7 +9,7 @@ class ParagraphChunker:
     
     def __init__(self, 
                  max_chunk_size: int = 512,
-                 paragraph_separator: str = "\n\s*\n"
+                 paragraph_separator: str = r"\n\s*\n"
                  ):
         """
         Initialize the ParagraphChunker.
