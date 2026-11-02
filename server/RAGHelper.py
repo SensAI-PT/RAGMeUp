@@ -390,8 +390,10 @@ class RAGHelper:
                     )
                     self.logger.info(f"Rewrite complete, original query: {prompt}, rewritten query: {new_prompt}")
                     rewritten = new_prompt
-                    # Reobtain documents with new question
-                    documents = self.handle_documents(new_prompt, prompt_embedding, datasets)
+                    # Reobtain documents with new question, using an embedding of
+                    # the rewritten query rather than the original one.
+                    rewritten_embedding = self.embeddings.encode(new_prompt)
+                    documents = self.handle_documents(new_prompt, rewritten_embedding, datasets)
                 else:
                     self.logger.info("Rewrite is enabled but the query is adequate.")
             else:
@@ -515,7 +517,8 @@ class RAGHelper:
                     self.logger.info(f"Rewrite complete, original query: {prompt}, rewritten query: {new_prompt}")
                     rewritten = new_prompt
                     yield ("step", "Re-retrieving documents with improved query...")
-                    documents = self.handle_documents(new_prompt, prompt_embedding, datasets, step_callback=lambda s: pending_steps.append(s))
+                    rewritten_embedding = self.embeddings.encode(new_prompt)
+                    documents = self.handle_documents(new_prompt, rewritten_embedding, datasets, step_callback=lambda s: pending_steps.append(s))
                     for s in pending_steps:
                         yield ("step", s)
                     pending_steps.clear()

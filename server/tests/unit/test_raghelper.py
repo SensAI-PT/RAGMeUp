@@ -157,6 +157,7 @@ class TestHandleUserInteraction:
             "rewrite_query_prompt", "Rewrite {question} because {motivation}"
         )
         rag_helper.retriever.get_relevant_documents.return_value = sample_documents
+        rag_helper.embeddings.encode.side_effect = lambda text: np.array([float(len(text))])
         rag_helper.llm.generate_response.side_effect = [
             ("No, missing info", []),  # rewrite check
             ("better query about Paris", []),  # rewritten query
@@ -169,6 +170,13 @@ class TestHandleUserInteraction:
 
         assert rewritten == "better query about Paris"
         assert rag_helper.retriever.get_relevant_documents.call_count == 2
+        # Both retrieval calls must use the embedding of the query they search for.
+        encode_calls = [call.args[0] for call in rag_helper.embeddings.encode.call_args_list]
+        assert encode_calls == ["Paris?", "better query about Paris"]
+        first_embedding = rag_helper.retriever.get_relevant_documents.call_args_list[0].args[1]
+        second_embedding = rag_helper.retriever.get_relevant_documents.call_args_list[1].args[1]
+        assert first_embedding.tolist() == [len("Paris?")]
+        assert second_embedding.tolist() == [len("better query about Paris")]
 
     def test_re2_appends_prompt(self, rag_helper, monkeypatch, sample_documents):
         self._base_env(monkeypatch)
@@ -215,6 +223,42 @@ class TestHandleUserInteractionStream:
         assert done["reply"] == "Hi!"
         assert done["fetched_new_documents"] is True
 
+    def test_rewrite_loop_uses_rewritten_embedding(
+        self, rag_helper, monkeypatch, sample_documents
+    ):
+        monkeypatch.setenv("rerank", "False")
+        monkeypatch.setenv("use_hyde", "False")
+        monkeypatch.setenv("use_rewrite_loop", "True")
+        monkeypatch.setenv("use_re2", "False")
+        monkeypatch.setenv("use_summarization", "False")
+        monkeypatch.setenv("provenance_method", "none")
+        monkeypatch.setenv("rag_instruction", "{context}")
+        monkeypatch.setenv("rag_question_initial", "{question}")
+        monkeypatch.setenv("rewrite_query_instruction", "Docs: {context}")
+        monkeypatch.setenv("rewrite_query_question", "Enough for {question}?")
+        monkeypatch.setenv(
+            "rewrite_query_prompt", "Rewrite {question} because {motivation}"
+        )
+
+        rag_helper.retriever.get_relevant_documents.return_value = sample_documents
+        rag_helper.embeddings.encode.side_effect = lambda text: np.array([float(len(text))])
+        rag_helper.llm.generate_response.side_effect = [
+            ("No, missing info", []),  # rewrite check
+            ("better query", []),  # rewritten query
+        ]
+        rag_helper.llm.generate_response_stream.return_value = (
+            iter(["ok"]),
+            [{"role": "user", "content": "q"}],
+        )
+
+        events = list(rag_helper.handle_user_interaction_stream("original", [], []))
+        done = events[-1][1]
+
+        assert done["rewritten"] == "better query"
+        assert rag_helper.embeddings.encode.call_args_list[-1].args[0] == "better query"
+        second_embedding = rag_helper.retriever.get_relevant_documents.call_args_list[1].args[1]
+        assert second_embedding.tolist() == [len("better query")]
+
 
 class TestAddDocumentTxt:
     def test_add_txt_chunks_and_upserts(self, rag_helper, tmp_path, monkeypatch):
@@ -245,7 +289,7 @@ class TestComputeProvenanceScores:
     def test_llm_method_delegates(self, rag_helper, monkeypatch, sample_documents):
         monkeypatch.setenv("provenance_method", "llm")
         monkeypatch.setenv("provenance_llm_prompt", "{query}{context}{answer}")
-        monkeypatch.setenv("attribute_include_query", "True")
+        monkeypatch.setenv("provenance_include_query", "True")
         rag_helper.llm.generate_response.return_value = ("0.5", [])
         scores = rag_helper.compute_provenance_scores("q", sample_documents, "a")
         assert len(scores) == 2
